@@ -6,7 +6,7 @@ export class Mix extends Action {
     super("Смешать", elements);
   }
 
-  execute() {
+  perform() {
     console.log(`[OK] ${this.getDescription()}`);
   }
 }

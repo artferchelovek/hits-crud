@@ -1,3 +1,4 @@
+import { Milk } from "./Milk";
 import { Action } from "../models/Action";
 import { IElement } from "../models/Element";
 
@@ -6,7 +7,10 @@ export class Whip extends Action {
     super("Взбить", elements);
   }
 
-  execute() {
-    console.log(`[ОК] ${this.getDescription()}`);
+  perform(): void {
+    this.elements.forEach((el) => {
+      if (el instanceof Milk) el.whip();
+    });
+    console.log(`[Действие] ${this.name}: Молоко взбито в пену.`);
   }
 }

@@ -7,7 +7,7 @@ export class Grind extends Action {
     super("Перемолоть", elements);
   }
 
-  execute() {
+  perform() {
     const coffeeElements = this.elements.filter(
       (e) => e instanceof CoffeeBean,
     ) as CoffeeBean[];

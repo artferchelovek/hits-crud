@@ -1,4 +1,5 @@
 import { IElement } from "../models/Element";
+import { Action } from "../models/Action";
 
 export class Drink implements IElement {
   private id: string;
@@ -24,8 +25,10 @@ export class Drink implements IElement {
   prepare() {
     console.log(`\n----- Приготовление ${this.name} -----`);
     if (this.rootElement) {
-      if ('execute' in this.rootElement) {
-        (this.rootElement as any).execute();
+      if (this.rootElement instanceof Action) {
+        this.rootElement.execute();
+      } else {
+        console.log(`Подаем: ${this.rootElement.getDescription()}`);
       }
     }
     console.log("[ОК] Напиток готов\n");

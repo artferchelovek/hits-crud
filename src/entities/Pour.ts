@@ -10,7 +10,7 @@ export class Pour extends Action {
 
   // private validOperation()
 
-  execute() {
+  perform() {
     const waterElements = this.elements.filter(
       (e) => e instanceof Water,
     ) as Water[];
