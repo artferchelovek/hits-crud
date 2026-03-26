@@ -9,12 +9,20 @@ export abstract class Action implements IElement {
     this.elements = elements;
   }
 
-  getDescription(): string {
-    const elementDescription = this.elements
-      .map((e) => e.getDescription())
-      .join(", ");
-    return `${this.name} - ${elementDescription}`;
+  execute(): void {
+    this.elements.forEach(el => {
+      if (el instanceof Action) {
+        el.execute();
+      }
+    });
+
+    this.perform();
   }
 
-  abstract execute(): void;
+  abstract perform(): void;
+
+  getDescription(): string {
+    const details = this.elements.map(e => e.getDescription()).join(", ");
+    return `${this.name} { ${details} }`;
+  }
 }

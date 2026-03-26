@@ -10,6 +10,6 @@ export abstract class Ingredient implements IElement {
   }
 
   getDescription(): string {
-    return `${this.name} ${this.netWeight} г/мл`;
+    return `${this.name} ${this.netWeight} г`;
   }
 }

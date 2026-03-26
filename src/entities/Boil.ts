@@ -7,18 +7,9 @@ export class Boil extends Action {
     super("Вскипятить", elements);
   }
 
-  execute() {
-    const waterElements = this.elements.filter(
-      (e) => e instanceof Water,
-    ) as Water[];
-
-    if (waterElements.length === 0) {
-      throw new Error(`[Ошибка] В действии нет воды `);
-    }
-
-    waterElements.forEach((water) => {
-      water.boil();
-      console.log(`[OK] Вода (${water.netWeight}мл) теперь вскипячена.`);
-    });
+  perform(): void {
+    const water = this.elements.filter(e => e instanceof Water) as Water[];
+    water.forEach(w => w.boil());
+    console.log(`[Действие] ${this.name}: Вода нагрета.`);
   }
 }
