@@ -8,8 +8,6 @@ export class Pour extends Action {
     super("Пролить", elements);
   }
 
-  // private validOperation()
-
   perform() {
     const waterElements = this.elements.filter(
       (e) => e instanceof Water,

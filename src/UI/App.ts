@@ -1,4 +1,5 @@
 import * as readlineSync from "readline-sync";
+import * as fs from "fs";
 import { Grind } from "../entities/Grind";
 import { Drink } from "../entities/Drink";
 import { Boil } from "../entities/Boil";
@@ -18,8 +19,10 @@ import { Action } from "../models/Action";
 
 export class App {
   private drinks: Drink[] = [];
+  private readonly DB_PATH = "./drinks.json";
 
   public start() {
+    this.loadFromFile();
     let exit = false;
 
     while (!exit) {
@@ -28,8 +31,9 @@ export class App {
       console.log(`
       1. Показать все рецепты (Retrieve)
       2. Создать новый напиток (Create)
-      3. Удалить напиток (Delete)
-      4. Приготовить напиток (Execute)
+      3. Редактировать напиток (Update)
+      4. Удалить напиток (Delete)
+      5. Приготовить напиток (Execute)
       0. Выход
       `);
 
@@ -39,15 +43,18 @@ export class App {
         case "1":
           console.clear();
           this.showDrinks();
-          readlineSync.question("\nНажмите Enter для продолжения...");
+          readlineSync.question("\nНажмите Enter...");
           break;
         case "2":
-          this.createDrink();
+          this.createNewDrink();
           break;
         case "3":
-          this.deleteDrink();
+          this.updateExistingDrink();
           break;
         case "4":
+          this.deleteDrink();
+          break;
+        case "5":
           this.prepareDrink();
           break;
         case "0":
@@ -58,6 +65,66 @@ export class App {
           readlineSync.question();
       }
     }
+  }
+
+  private saveToFile() {
+    try {
+      const data = JSON.stringify(this.drinks, null, 2);
+      fs.writeFileSync(this.DB_PATH, data, "utf8");
+      console.log("[OK] База данных обновлена.");
+    } catch (e) {
+      console.log("[ОШИБКА] Не удалось сохранить файл.");
+    }
+  }
+
+  private loadFromFile() {
+    if (!fs.existsSync(this.DB_PATH)) return;
+
+    try {
+      const rawData = fs.readFileSync(this.DB_PATH, "utf8");
+      const parsed = JSON.parse(rawData);
+
+      this.drinks = parsed.map((d: any) => {
+        const drink = new Drink(d.name);
+        if (d.rootElement) {
+          drink.setRoot(this.reconstructElement(d.rootElement));
+        }
+        return drink;
+      });
+      console.log("[OK] Данные загружены.");
+    } catch (e) {
+      console.log("[ПРЕДУПРЕЖДЕНИЕ] Ошибка парсинга базы, создана новая.");
+      this.drinks = [];
+    }
+  }
+
+  private reconstructElement(data: any): IElement {
+    if (data.elements) {
+      const children = data.elements.map((el: any) =>
+        this.reconstructElement(el),
+      );
+
+      if (data.name === "Вскипятить") return new Boil(children);
+      if (data.name === "Перемолоть") return new Grind(children);
+      if (data.name === "Пролить") return new Pour(children);
+      if (data.name === "Взбить") return new Whip(children);
+      if (data.name === "Смешать") return new Mix(children);
+      if (data.name === "Добавить") return new Add(children);
+      if (data.name.includes("Подготовка базы")) {
+        const baseName = data.name.replace("Подготовка базы: ", "");
+        const baseDrink =
+          this.drinks.find((d) => d.name === baseName) || new Drink(baseName);
+        return new PrepareBase(baseDrink);
+      }
+    }
+
+    if (data.name === "Вода") return new Water(data.netWeight);
+    if (data.name === "Кофейные зёрна") return new CoffeeBean(data.netWeight);
+    if (data.name === "Молоко") return new Milk(data.netWeight);
+    if (data.name === "Сироп") return new Syrup(data.netWeight);
+    if (data.name === "Лёд") return new Ice(data.netWeight);
+
+    return data;
   }
 
   private showDrinks() {
@@ -71,223 +138,202 @@ export class App {
     });
   }
 
-  private createDrink() {
+  private createNewDrink() {
     console.clear();
     const name = readlineSync.question("Введите название напитка: ");
     const newDrink = new Drink(name);
-    let currentElements: IElement[] = [];
+    this.manageDrink(newDrink, []);
+    this.drinks.push(newDrink);
+    this.saveToFile();
+  }
 
-    let addingActions = true;
-    while (addingActions) {
+  private updateExistingDrink() {
+    console.clear();
+    this.showDrinks();
+    if (this.drinks.length === 0) {
+      readlineSync.question("\nНажмите Enter...");
+      return;
+    }
+
+    const index = readlineSync.questionInt("\nВыберите номер для Update: ");
+    if (this.drinks[index]) {
+      const drink = this.drinks[index];
+      let elements: IElement[] = [];
+      if (drink.rootElement && drink.rootElement instanceof Action) {
+        elements = [...drink.rootElement.elements];
+      } else if (drink.rootElement) {
+        elements = [drink.rootElement];
+      }
+      this.manageDrink(drink, elements);
+      this.saveToFile();
+    }
+  }
+
+  private manageDrink(drink: Drink, initialElements: IElement[]) {
+    let currentElements: IElement[] = initialElements;
+    let active = true;
+
+    while (active) {
       console.clear();
-      console.log(`--- Редактор: ${name} ---`);
+      console.log(`--- Редактор: ${drink.name} ---`);
 
-      const tableInfo =
-        currentElements.length > 0
-          ? currentElements.map((e) => e.name).join(", ")
-          : "пусто";
-
-      console.log(`На столе: [ ${tableInfo} ]`);
+      if (currentElements.length > 0) {
+        console.log("На столе:");
+        currentElements.forEach((el, idx) => {
+          console.log(`  [${idx}] ${el.name}`);
+        });
+      } else {
+        console.log("На столе: [ пусто ]");
+      }
 
       console.log(`
-    1. Подготовить воду (Water)
-    2. Подготовить зерна (Beans)
-    3. ВСКИПЯТИТЬ (Boil)
-    4. СМОЛОТЬ (Grind)
-    5. ПРОЛИТЬ (Pour)
-    6. Добавить МОЛОКО (Milk)
-    7. ВЗБИТЬ молоко (Whip)
-    8. СМЕШАТЬ процессы (Mix)
-    9. Добавить ГОТОВЫЙ напиток (PrepareBase)
-    10. Добавить сироп (Syrup)
-    11. Добавить лёд (Ice)
-    12. Упаковать в ДОБАВИТЬ (Add)
-    0. Сохранить напиток
+    --- ИНГРЕДИЕНТЫ ---        --- ДЕЙСТВИЯ ---
+    1. Вода                   3. ВСКИПЯТИТЬ
+    2. Зерна                  4. СМОЛОТЬ
+    6. Молоко                 5. ПРОЛИТЬ
+    10. Сироп                 7. ВЗБИТЬ
+    11. Лёд                   8. СМЕШАТЬ
+                              12. ДОБАВИТЬ
+    
+    --- УПРАВЛЕНИЕ РЕЦЕПТОМ ---
+    13. ИЗМЕНИТЬ НАЗВАНИЕ напитка
+    14. УДАЛИТЬ ЭЛЕМЕНТ со стола (по индексу)
+    9.  Вставить БАЗУ
+    0.  СОХРАНИТЬ И ВЫЙТИ
     `);
 
-      const choice = readlineSync.question("Выберите шаг: ");
+      const choice = readlineSync.question("Выбор: ");
 
       switch (choice) {
         case "1":
-          currentElements.push(
-            new Water(readlineSync.questionInt("Мл воды: ")),
-          );
+          currentElements.push(new Water(readlineSync.questionInt("Мл: ")));
           break;
-
         case "2":
-          currentElements.push(
-            new CoffeeBean(readlineSync.questionInt("Грамм кофе: ")),
-          );
+          currentElements.push(new CoffeeBean(readlineSync.questionInt("Г: ")));
           break;
-
-        case "3": {
-          const hasWater = currentElements.some((e) => e instanceof Water);
-          if (!hasWater) {
-            console.log("[ОШИБКА] На столе нет воды!");
-          } else {
-            const water = currentElements.filter((e) => e instanceof Water);
-            const others = currentElements.filter((e) => !(e instanceof Water));
-            currentElements = [...others, new Boil(water)];
-            console.log("[OK] Действие Boil добавлено.");
-          }
+        case "3":
+          const w = currentElements.filter((e) => e instanceof Water);
+          if (w.length > 0) {
+            currentElements = [
+              ...currentElements.filter((e) => !(e instanceof Water)),
+              new Boil(w),
+            ];
+          } else console.log("[ОШИБКА] Нет воды.");
           break;
-        }
-
-        case "4": {
-          const hasBeans = currentElements.some((e) => e instanceof CoffeeBean);
-          if (!hasBeans) {
-            console.log("[ОШИБКА] Нет зерен для помола!");
-          } else {
-            const beans = currentElements.filter(
-              (e) => e instanceof CoffeeBean,
-            );
-            const others = currentElements.filter(
-              (e) => !(e instanceof CoffeeBean),
-            );
-            currentElements = [...others, new Grind(beans)];
-            console.log("[OK] Действие Grind добавлено.");
-          }
+        case "4":
+          const b = currentElements.filter((e) => e instanceof CoffeeBean);
+          if (b.length > 0) {
+            currentElements = [
+              ...currentElements.filter((e) => !(e instanceof CoffeeBean)),
+              new Grind(b),
+            ];
+          } else console.log("[ОШИБКА] Нет зерен.");
           break;
-        }
-
-        case "5": {
-          const hasWatery = currentElements.some(
-            (e) => e instanceof Water || e instanceof Boil,
-          );
-          const hasCoffeey = currentElements.some(
-            (e) => e instanceof CoffeeBean || e instanceof Grind,
-          );
-          if (!hasWatery || !hasCoffeey) {
-            console.log("[ОШИБКА] Для проливки нужны и вода, и кофе!");
-          } else {
-            const pourAction = new Pour([...currentElements]);
-            currentElements = [pourAction];
-            console.log("[OK] Действие Pour сформировано.");
-          }
+        case "5":
+          currentElements = [new Pour([...currentElements])];
           break;
-        }
-
         case "6":
-          currentElements.push(
-            new Milk(readlineSync.questionInt("Мл молока: ")),
-          );
+          currentElements.push(new Milk(readlineSync.questionInt("Мл: ")));
           break;
-
-        case "7": {
-          const milkOnTable = currentElements.some((e) => e instanceof Milk);
-          if (!milkOnTable) {
-            console.log("[ОШИБКА] На столе нет молока!");
-          } else {
-            const milkElements = currentElements.filter(
-              (e) => e instanceof Milk,
-            );
-            const otherElements = currentElements.filter(
-              (e) => !(e instanceof Milk),
-            );
-            currentElements = [...otherElements, new Whip(milkElements)];
-            console.log("[OK] Действие Whip добавлено.");
-          }
+        case "7":
+          const m = currentElements.filter((e) => e instanceof Milk);
+          if (m.length > 0) {
+            currentElements = [
+              ...currentElements.filter((e) => !(e instanceof Milk)),
+              new Whip(m),
+            ];
+          } else console.log("[ОШИБКА] Нет молока.");
           break;
-        }
-
-        case "8": {
-          const actionsToMix = currentElements.filter(
-            (e) => e instanceof Action,
-          );
-          const ingredientsLeft = currentElements.filter(
-            (e) => !(e instanceof Action),
-          );
-          if (actionsToMix.length < 2) {
-            console.log("[ОШИБКА] Нужно минимум 2 процесса для смешивания!");
-          } else {
-            currentElements = [new Mix(actionsToMix), ...ingredientsLeft];
-            console.log("[OK] Процессы объединены в Mix.");
-          }
+        case "8":
+          const acts = currentElements.filter((e) => e instanceof Action);
+          const ings = currentElements.filter((e) => !(e instanceof Action));
+          if (acts.length >= 2) {
+            currentElements = [new Mix(acts), ...ings];
+          } else console.log("[ОШИБКА] Нужно минимум 2 процесса.");
           break;
-        }
-
-        case "9": {
-          if (this.drinks.length === 0) {
-            console.log("[ОШИБКА] Нет сохраненных напитков для базы.");
-            break;
-          }
-          this.drinks.forEach((d, i) => console.log(`[${i}] ${d.name}`));
-          const drinkIndex = readlineSync.questionInt("Введите номер: ");
-          if (this.drinks[drinkIndex]) {
-            currentElements.push(new PrepareBase(this.drinks[drinkIndex]));
-            console.log("[OK] База добавлена.");
-          }
+        case "9":
+          this.drinks.forEach((d, idx) => console.log(`[${idx}] ${d.name}`));
+          const sel = readlineSync.questionInt("ID: ");
+          if (this.drinks[sel])
+            currentElements.push(new PrepareBase(this.drinks[sel]));
           break;
-        }
-
         case "10":
-          currentElements.push(
-            new Syrup(readlineSync.questionInt("Мл сиропа: ")),
-          );
+          currentElements.push(new Syrup(readlineSync.questionInt("Мл: ")));
           break;
-
         case "11":
-          currentElements.push(
-            new Ice(readlineSync.questionInt("Грамм льда: ")),
-          );
+          currentElements.push(new Ice(readlineSync.questionInt("Г: ")));
           break;
-
-        case "12": {
-          const itemsToAdd = currentElements.filter(
-            (e) => e instanceof Ingredient,
-          );
-          const other = currentElements.filter(
+        case "12":
+          const toAdd = currentElements.filter((e) => e instanceof Ingredient);
+          const rest = currentElements.filter(
             (e) => !(e instanceof Ingredient),
           );
-          if (itemsToAdd.length === 0) {
-            console.log("[ОШИБКА] Нет свободных ингредиентов на столе.");
+          if (toAdd.length > 0) {
+            currentElements = [...rest, new Add(toAdd)];
+          }
+          break;
+
+        case "13": {
+          const newName = readlineSync.question("Введите новое название: ");
+          if (newName.trim()) {
+            drink.name = newName;
+            console.log("[OK] Название изменено.");
+          }
+          break;
+        }
+
+        case "14": {
+          if (currentElements.length === 0) {
+            console.log("[ОШИБКА] Стол пуст.");
           } else {
-            currentElements = [...other, new Add(itemsToAdd)];
-            console.log("[OK] Ингредиенты упакованы в Add.");
+            const idx = readlineSync.questionInt(
+              "Введите индекс элемента для удаления: ",
+            );
+            if (currentElements[idx]) {
+              console.log(`[OK] Элемент ${currentElements[idx].name} удален.`);
+              currentElements.splice(idx, 1);
+            } else {
+              console.log("[ОШИБКА] Неверный индекс.");
+            }
           }
           break;
         }
 
         case "0":
-          if (currentElements.length === 0) {
-            console.log("[ОШИБКА] Нельзя сохранить пустой напиток.");
-          } else if (currentElements.length === 1) {
-            newDrink.setRoot(currentElements[0]);
-            addingActions = false;
+          if (currentElements.length > 0) {
+            const root =
+              currentElements.length === 1
+                ? currentElements[0]
+                : new Mix([...currentElements]);
+            drink.setRoot(root);
+            active = false;
+            console.log("[OK] Рецепт успешно обновлен.");
           } else {
-            console.log(
-              "[ПРЕДУПРЕЖДЕНИЕ] На столе несколько компонентов. Автоматическое смешивание...",
-            );
-            newDrink.setRoot(new Mix([...currentElements]));
-            addingActions = false;
+            console.log("[ОШИБКА] Нельзя сохранить пустой напиток.");
           }
           break;
       }
-      if (addingActions) readlineSync.question("\nНажмите Enter...");
+      if (active) readlineSync.question("\nНажмите Enter...");
     }
-    this.drinks.push(newDrink);
   }
 
   private deleteDrink() {
-    console.clear();
     this.showDrinks();
-    const index = readlineSync.questionInt("\nНомер для удаления: ");
-    if (this.drinks[index]) {
-      const name = this.drinks[index].name;
-      this.drinks.splice(index, 1);
-      console.log(`[OK] Напиток ${name} удален.`);
+    const idx = readlineSync.questionInt("\nУдалить номер: ");
+    if (this.drinks[idx]) {
+      this.drinks.splice(idx, 1);
+      console.log("[OK] Напиток удален.");
     }
-    readlineSync.question("\nНажмите Enter...");
+    readlineSync.question("\nEnter...");
   }
 
   private prepareDrink() {
-    console.clear();
     this.showDrinks();
-    const index = readlineSync.questionInt("\nВыберите напиток: ");
-    if (this.drinks[index]) {
+    const idx = readlineSync.questionInt("\nПриготовить номер: ");
+    if (this.drinks[idx]) {
       console.clear();
-      this.drinks[index].prepare();
+      this.drinks[idx].prepare();
     }
-    readlineSync.question("\nНажмите Enter для выхода в меню...");
+    readlineSync.question("\nEnter...");
   }
 }
